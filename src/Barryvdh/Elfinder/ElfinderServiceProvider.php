@@ -1,9 +1,18 @@
 <?php namespace Barryvdh\Elfinder;
 
+use Illuminate\Routing\Router;
 use Illuminate\Support\ServiceProvider;
 
 class ElfinderServiceProvider extends ServiceProvider {
-
+	/**
+	 * This namespace is applied to the controller routes in your routes file.
+	 *
+	 * In addition, it is set as the URL generator's root namespace.
+	 *
+	 * @var string
+	 */
+	protected $namespace = 'Barryvdh\Elfinder';
+	
 	/**
 	 * Indicates if loading of the provider is deferred.
 	 *
@@ -12,13 +21,22 @@ class ElfinderServiceProvider extends ServiceProvider {
 	protected $defer = false;
 
 	/**
-	 * Bootstrap the application events.
+	 * Define your route model bindings, pattern filters, etc.
 	 *
+	 * @param  \Illuminate\Routing\Router  $router
 	 * @return void
 	 */
-	public function boot()
+	public function boot(Router $router)
 	{
-		$this->package('barryvdh/laravel-elfinder');
+		parent::boot($router);
+		$viewPath = __DIR__.'/../resources/views';
+		$this->loadViewsFrom($viewPath, 'elfinder');
+		$this->publishes([
+			$viewPath => base_path('resources/views/vendor/elfinder'),
+		], 'views');
+		if (!defined('ELFINDER_IMG_PARENT_URL')) {
+			define('ELFINDER_IMG_PARENT_URL', $this->app['url']->asset('packages/barryvdh/laravel-elfinder'));
+		}
 	}
 
 	/**
@@ -28,13 +46,36 @@ class ElfinderServiceProvider extends ServiceProvider {
 	 */
 	public function register()
 	{
-        $this->app['command.elfinder.publish'] = $this->app->share(function($app)
-        {
-            //Make sure the asset publisher is registered.
-            $app->register('Illuminate\Foundation\Providers\PublisherServiceProvider');
-            return new Console\PublishCommand($app['asset.publisher']);
-        });
-        $this->commands('command.elfinder.publish');
+		$configPath = __DIR__ . '/../../config/config.php';
+		$this->mergeConfigFrom($configPath, 'elfinder');
+		$this->publishes([$configPath => config_path('elfinder.php')], 'config');
+		$this->app['command.elfinder.publish'] = $this->app->share(function($app)
+		{
+			$publicPath = $app['path.public'];
+			return new Console\PublishCommand($app['files'], $publicPath);
+		});
+		$this->commands('command.elfinder.publish');
+	}
+	
+		/**
+	 * Define the routes for the application.
+	 *
+	 * @return void
+	 */
+	public function map()
+	{
+		$config = $this->app['config']->get('elfinder.route', []);
+		$config['namespace'] = $this->namespace;
+		$router = $this->app['Illuminate\Routing\Router'];
+		$router->group($config, function($router)
+		{
+			$router->get('/', 'ElfinderController@showIndex');
+			$router->any('connector', 'ElfinderController@showConnector');
+			$router->get('popup', 'ElfinderController@showPopup');
+			$router->get('tinymce', 'ElfinderController@showTinyMCE');
+			$router->get('tinymce4', 'ElfinderController@showTinyMCE4');
+			$router->get('ckeditor', 'ElfinderController@showCKeditor4');
+		});
 	}
 
 	/**
